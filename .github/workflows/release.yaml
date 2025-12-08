@@ -177,9 +177,10 @@ jobs:
           path: dist/
 
       - name: Create GitHub Release
+        uses: actions/github-release@v1
+        with:
+          tag: ${{ steps.tag.outputs.version }}
+          name: "Version ${{ steps.tag.outputs.version }}"
+          generate_release_notes: true
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create ${{ needs.details.outputs.tag_name }} dist/* \
-            --title ${{ needs.details.outputs.tag_name }} \
-            --generate-notes
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -177,10 +177,10 @@ jobs:
           path: dist/
 
       - name: Create GitHub Release
-        uses: actions/github-release@v1
+        uses: softprops/action-gh-release@v2
         with:
-          tag: ${{ steps.tag.outputs.version }}
-          name: "Version ${{ steps.tag.outputs.version }}"
+          tag_name: ${{ needs.details.outputs.tag_name }}
+          name: "Version ${{ needs.details.outputs.tag_name }}"
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

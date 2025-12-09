@@ -23,6 +23,7 @@ jobs:
       new_version: ${{ steps.release.outputs.new_version }}
       suffix: ${{ steps.release.outputs.suffix }}
       tag_name: ${{ steps.release.outputs.tag_name }}
+      clean_version: ${{ steps.clean_version.outputs.clean_version }}
 
     steps:
       - uses: actions/checkout@v4
@@ -41,6 +42,13 @@ jobs:
             echo "No tag found"
             exit 1
           fi
+
+      - name: Extract clean version (remove 'v')
+        id: clean_version
+        run: |
+          RAW="${{ steps.release.outputs.new_version }}"
+          CLEAN="${RAW#v}"
+          echo "clean_version=$CLEAN" >> $GITHUB_OUTPUT
 
   ################################################
   #   CHECK VERSION ON PYPI
@@ -154,9 +162,9 @@ jobs:
       - name: Publish distribution to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
 
-################################################
-#  GITHUB RELEASE
-################################################
+  ################################################
+  #  GITHUB RELEASE
+  ################################################
   github_release:
     name: Create GitHub Release
     needs: [setup_and_build, details]

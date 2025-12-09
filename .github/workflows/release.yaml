@@ -100,7 +100,7 @@ jobs:
 
       - name: Update project version
         run: |
-          sed -i "s/^version = .*/version = \"${{ needs.details.outputs.new_version }}\"/" pyproject.toml
+          sed -i "s/^version = .*/version = \"${{ needs.details.outputs.clean_version }}\"/" pyproject.toml
 
       - name: Generate stubs
         run: |

@@ -154,9 +154,9 @@ jobs:
       - name: Publish distribution to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
 
-  ################################################
-  #  GITHUB RELEASE
-  ################################################
+################################################
+#  GITHUB RELEASE
+################################################
   github_release:
     name: Create GitHub Release
     needs: [setup_and_build, details]
@@ -180,7 +180,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.details.outputs.tag_name }}
-          name: "Version ${{ needs.details.outputs.tag_name }}"
+          name: "Version ${{ needs.details.outputs.clean_version }}"
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

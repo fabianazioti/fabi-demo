@@ -3,4 +3,4 @@ class DEMO:
         self,
         input_file: str,
     ) -> None:
-        print("apply_scale")
+        print(f"apply_scale {input_file}")

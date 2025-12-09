@@ -3,24 +3,30 @@ name: release
 on:
   push:
     tags:
-      - "[0-9]+.[0-9]+.[0-9]+"
-      - "[0-9]+.[0-9]+.[0-9]+a[0-9]+"
-      - "[0-9]+.[0-9]+.[0-9]+b[0-9]+"
-      - "[0-9]+.[0-9]+.[0-9]+rc[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+a[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+b[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+rc[0-9]+"
 
 env:
   PACKAGE_NAME: "fabi-demo"
+  MODULE_NAME: "fabi_demo"
   OWNER: "fabianazioti"
 
 jobs:
+  ################################################
+  #   EXTRACT TAG DETAILS
+  ################################################
   details:
     runs-on: ubuntu-latest
     outputs:
       new_version: ${{ steps.release.outputs.new_version }}
       suffix: ${{ steps.release.outputs.suffix }}
       tag_name: ${{ steps.release.outputs.tag_name }}
+      clean_version: ${{ steps.clean_version.outputs.clean_version }}
+
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
       - name: Extract tag and Details
         id: release
@@ -37,40 +43,53 @@ jobs:
             exit 1
           fi
 
+      - name: Extract clean version (remove 'v')
+        id: clean_version
+        run: |
+          RAW="${{ steps.release.outputs.new_version }}"
+          CLEAN="${RAW#v}"
+          echo "clean_version=$CLEAN" >> $GITHUB_OUTPUT
+
+  ################################################
+  #   CHECK VERSION ON PYPI
+  ################################################
   check_pypi:
     needs: details
     runs-on: ubuntu-latest
+
     steps:
       - name: Fetch information from PyPI
         run: |
           response=$(curl -s https://pypi.org/pypi/${{ env.PACKAGE_NAME }}/json || echo "{}")
           latest_previous_version=$(echo $response | grep -oP '"releases":\{"\K[^"]+' | sort -rV | head -n 1)
-
           if [ -z "$latest_previous_version" ]; then
             echo "Package not found on PyPI."
             latest_previous_version="0.0.0"
           fi
-
           echo "latest_previous_version=$latest_previous_version" >> $GITHUB_ENV
 
       - name: Compare versions and exit if not newer
         run: |
           NEW_VERSION=${{ needs.details.outputs.new_version }}
           LATEST_VERSION=$latest_previous_version
-
-          if [ "$(printf '%s\n' "$LATEST_VERSION" "$NEW_VERSION" | sort -rV | head -n 1)" != "$NEW_VERSION" ] || [ "$NEW_VERSION" == "$LATEST_VERSION" ]; then
+          if [ "$(printf '%s\n' "$LATEST_VERSION" "$NEW_VERSION" | sort -rV | head -n 1)" != "$NEW_VERSION" ] \
+            || [ "$NEW_VERSION" == "$LATEST_VERSION" ]; then
             echo "The new version $NEW_VERSION is not greater than $LATEST_VERSION"
             exit 1
           fi
 
+  ################################################
+  #   BUILD PACKAGE
+  ################################################
   setup_and_build:
     needs: [details, check_pypi]
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
@@ -81,33 +100,34 @@ jobs:
 
       - name: Update project version
         run: |
-          sed -i "s/^version = .*/version = \"${{ needs.details.outputs.new_version }}\"/" pyproject.toml
+          sed -i "s/^version = .*/version = \"${{ needs.details.outputs.clean_version }}\"/" pyproject.toml
 
       - name: Generate stubs
         run: |
           python3 -m pip install mypy
-          python3 -m mypy.stubgen ${{ env.PACKAGE_NAME }} -o .
+          stubgen ${{ env.MODULE_NAME }} -o .
 
       - name: Build source and wheel distribution
         run: |
           python3 -m build
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: dist
           path: dist/
 
   ################################################
-  # 1) TESTPYPI PUBLISH (COM TWINE)
+  #  TESTPYPI (TWINE)
   ################################################
   testpypi_publish:
-    name: Upload release to TestPyPI (SAFE TEST)
+    name: Upload to TestPyPI (SAFE TEST)
     needs: [setup_and_build, details]
     runs-on: ubuntu-latest
+
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: dist
           path: dist/
@@ -121,7 +141,7 @@ jobs:
           python3 -m twine upload --repository-url https://test.pypi.org/legacy/ dist/*
 
   ################################################
-  # 2) PYPI OFICIAL (COM TRUSTED PUBLISHING OIDC)
+  #  PYPI (TRUSTED PUBLISHING)
   ################################################
   pypi_publish:
     name: Upload release to PyPI
@@ -131,9 +151,10 @@ jobs:
       name: release
     permissions:
       id-token: write
+
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: dist
           path: dist/
@@ -141,28 +162,33 @@ jobs:
       - name: Publish distribution to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
 
+  ################################################
+  #  GITHUB RELEASE
+  ################################################
   github_release:
     name: Create GitHub Release
     needs: [setup_and_build, details]
     runs-on: ubuntu-latest
     permissions:
       contents: write
+
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: dist
           path: dist/
 
       - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.details.outputs.tag_name }}
+          name: "Version ${{ needs.details.outputs.clean_version }}"
+          generate_release_notes: true
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create ${{ needs.details.outputs.tag_name }} dist/* \
-            --title ${{ needs.details.outputs.tag_name }} \
-            --generate-notes
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -92,6 +92,8 @@ jobs:
   bump-version:
     needs: detect-branch
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # necessário para permitir push no repositório
     env:
       BRANCH: ${{ needs.detect-branch.outputs.branch }}
       VERSION: ${{ needs.detect-branch.outputs.version }}

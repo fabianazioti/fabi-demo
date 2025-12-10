@@ -195,7 +195,6 @@ jobs:
 
   # Publish in TestPyPI
   testpypi_publish:
-    id: testpypi_publish
     name: Upload to TestPyPI (SAFE TEST)
     needs: [setup_and_build, details]
     runs-on: ubuntu-latest

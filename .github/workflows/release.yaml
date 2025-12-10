@@ -235,23 +235,22 @@ jobs:
       - name: Publish distribution to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
 
-  # Release Version
+  # Release
   github_release:
     name: Create GitHub Release
-    needs: [details, setup_and_build, testpypi_publish, pypi_publish]
+    needs:
+      - details
+      - setup_and_build
+      - testpypi_publish
+      - pypi_publish
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
-    if: |
+    if: >
+      needs.testpypi_publish.result == 'success' &&
       (
-        needs.details.outputs.is_prerelease == 'true' &&
-        needs.testpypi_publish.result == 'success'
-      ) ||
-      (
-        needs.details.outputs.is_prerelease == 'false' &&
-        needs.testpypi_publish.result == 'success' &&
-        contains(needs, 'pypi_publish') &&
+        needs.details.outputs.is_prerelease == 'true' ||
         needs.pypi_publish.result == 'success'
       )
 
@@ -261,17 +260,18 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist/
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.details.outputs.tag_name }}
           name: "Version ${{ needs.details.outputs.clean_version }}"
           generate_release_notes: true
+
+          # pre-release
+          prerelease: ${{ needs.details.outputs.is_prerelease }}
+
+          # latest
+          make_latest: ${{ needs.details.outputs.is_prerelease == 'false' }}
+
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -14,9 +14,7 @@ env:
   OWNER: "fabianazioti"
 
 jobs:
-  ################################################
-  #   EXTRACT TAG DETAILS
-  ################################################
+  # Extract tag details
   details:
     runs-on: ubuntu-latest
     outputs:
@@ -24,6 +22,7 @@ jobs:
       suffix: ${{ steps.release.outputs.suffix }}
       tag_name: ${{ steps.release.outputs.tag_name }}
       clean_version: ${{ steps.clean_version.outputs.clean_version }}
+      is_prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
 
     steps:
       - uses: actions/checkout@v4
@@ -33,10 +32,14 @@ jobs:
         run: |
           if [ "${{ github.ref_type }}" = "tag" ]; then
             TAG_NAME=${GITHUB_REF#refs/tags/}
+            # versão com prefixo v (ex: v0.1.7a1)
             NEW_VERSION=$(echo $TAG_NAME | awk -F'-' '{print $1}')
-            SUFFIX=$(echo $TAG_NAME | grep -oP '[a-z]+[0-9]+' || echo "")
+
+            # captura limpa, sem risco de quebrar o formato
+            SUFFIX=$(echo "$NEW_VERSION" | grep -oP '(a|b|rc)[0-9]+' | tr -d '\n' || true)
+
             echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
-            echo "suffix=$SUFFIX" >> "$GITHUB_OUTPUT"
+            echo "suffix=${SUFFIX:-}" >> "$GITHUB_OUTPUT"
             echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
           else
             echo "No tag found"
@@ -50,9 +53,83 @@ jobs:
           CLEAN="${RAW#v}"
           echo "clean_version=$CLEAN" >> $GITHUB_OUTPUT
 
-  ################################################
-  #   CHECK VERSION ON PYPI
-  ################################################
+      - name: Detect prerelease
+        id: prerelease
+        run: |
+          TAG="${{ steps.release.outputs.tag_name }}"
+          if [[ "$TAG" =~ (a[0-9]+|b[0-9]+|rc[0-9]+)$ ]]; then
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+          fi
+
+  # Detect branch and updated version
+  detect-branch:
+    needs: details
+    runs-on: ubuntu-latest
+    outputs:
+      branch: ${{ steps.detect.outputs.branch }}
+      version: ${{ steps.version.outputs.clean }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect branch for tag
+        id: detect
+        run: |
+          BRANCH=$(git branch -r --contains "$GITHUB_SHA" | head -n 1 | sed 's/origin\///' | tr -d ' ')
+          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+
+      - name: Extract version (remove leading v)
+        id: version
+        run: |
+          CLEAN="${GITHUB_REF#refs/tags/v}"
+          echo "clean=$CLEAN" >> $GITHUB_OUTPUT
+
+  bump-version:
+    needs: detect-branch
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # necessário para permitir push no repositório
+    env:
+      BRANCH: ${{ needs.detect-branch.outputs.branch }}
+      VERSION: ${{ needs.detect-branch.outputs.version }}
+
+    steps:
+      - name: Checkout correct branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ env.BRANCH }}
+
+      - name: Update pyproject.toml version
+        run: |
+          sed -i "s/^version = .*/version = \"${VERSION}\"/" pyproject.toml
+
+      - name: Validate pyproject.toml
+        run: |
+          pip install validate-pyproject
+          validate-pyproject pyproject.toml
+
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add pyproject.toml
+          git commit -m "Release ${VERSION}: update version"
+          git push origin HEAD:${BRANCH}
+
+      - name: Upload updated pyproject
+        uses: actions/upload-artifact@v4
+        with:
+          name: updated-project
+          path: |
+            pyproject.toml
+
+  # Check version on Pypi
   check_pypi:
     needs: details
     runs-on: ubuntu-latest
@@ -78,15 +155,18 @@ jobs:
             exit 1
           fi
 
-  ################################################
-  #   BUILD PACKAGE
-  ################################################
+  # Build Package
   setup_and_build:
-    needs: [details, check_pypi]
+    needs: [details, check_pypi, bump-version]
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: updated-project
+          path: .
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -97,10 +177,6 @@ jobs:
         run: |
           python3 -m pip install --upgrade pip
           python3 -m pip install build twine
-
-      - name: Update project version
-        run: |
-          sed -i "s/^version = .*/version = \"${{ needs.details.outputs.clean_version }}\"/" pyproject.toml
 
       - name: Generate stubs
         run: |
@@ -117,9 +193,7 @@ jobs:
           name: dist
           path: dist/
 
-  ################################################
-  #  TESTPYPI (TWINE)
-  ################################################
+  # Publish in TestPyPI
   testpypi_publish:
     name: Upload to TestPyPI (SAFE TEST)
     needs: [setup_and_build, details]
@@ -140,12 +214,11 @@ jobs:
           python3 -m pip install twine
           python3 -m twine upload --repository-url https://test.pypi.org/legacy/ dist/*
 
-  ################################################
-  #  PYPI (TRUSTED PUBLISHING)
-  ################################################
+  # Publish to PYPI
   pypi_publish:
     name: Upload release to PyPI
-    needs: [setup_and_build, details]
+    needs: [testpypi_publish, setup_and_build, details]
+    if: ${{ needs.details.outputs.is_prerelease == 'false' }}
     runs-on: ubuntu-latest
     environment:
       name: release
@@ -162,27 +235,60 @@ jobs:
       - name: Publish distribution to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
 
-  ################################################
-  #  GITHUB RELEASE
-  ################################################
-  github_release:
-    name: Create GitHub Release
-    needs: [setup_and_build, details]
+  # Pre-Release and Release jobs
+  github_prerelease:
+    name: Create GitHub Pre-Release
     runs-on: ubuntu-latest
+    needs:
+      - details
+      - setup_and_build
+      - testpypi_publish
+
+    if: >
+      needs.testpypi_publish.result == 'success' &&
+      needs.details.outputs.is_prerelease == 'true'
+
     permissions:
       contents: write
 
     steps:
-      - name: Checkout Code
+      - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
+      - name: Create GitHub Pre-Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: dist
-          path: dist/
+          tag_name: ${{ needs.details.outputs.tag_name }}
+          name: "Version ${{ needs.details.outputs.clean_version }}"
+          generate_release_notes: true
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  github_release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs:
+      - details
+      - setup_and_build
+      - testpypi_publish
+      - pypi_publish
+
+    if: >
+      needs.testpypi_publish.result == 'success' &&
+      needs.pypi_publish.result == 'success' &&
+      needs.details.outputs.is_prerelease == 'false'
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -190,5 +296,6 @@ jobs:
           tag_name: ${{ needs.details.outputs.tag_name }}
           name: "Version ${{ needs.details.outputs.clean_version }}"
           generate_release_notes: true
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

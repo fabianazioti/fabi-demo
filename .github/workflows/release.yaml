@@ -195,6 +195,7 @@ jobs:
 
   # Publish in TestPyPI
   testpypi_publish:
+    id: testpypi_publish
     name: Upload to TestPyPI (SAFE TEST)
     needs: [setup_and_build, details]
     runs-on: ubuntu-latest
@@ -247,9 +248,11 @@ jobs:
       (
         needs.details.outputs.is_prerelease == 'true' &&
         needs.testpypi_publish.result == 'success'
-      ) || (
+      ) ||
+      (
         needs.details.outputs.is_prerelease == 'false' &&
         needs.testpypi_publish.result == 'success' &&
+        contains(needs, 'pypi_publish') &&
         needs.pypi_publish.result == 'success'
       )
 

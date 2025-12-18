@@ -1,6 +1,6 @@
 [project]
 name = "fabi-demo"
-version = "1.0.4"
+version = "1.0.5"
 description = ""
 authors = [
     {name = "FZV",email = "fake_email@email.com"}

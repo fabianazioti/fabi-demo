@@ -29,6 +29,7 @@ Versão final::
     v1.2.3
 
 Pré-release::
+
     v1.2.3a1
     v1.2.3b1
     v1.2.3rc1
@@ -38,14 +39,17 @@ Requisitos de Autenticação
 ++++++++++++++++++++++++++
 
 GitHub Actions Secrets::
+
     Settings → Secrets and variables → Actions → New repository secret
 
 Secrets::
+
     TEST_PYPI_API_TOKEN	Publicação de pré-release e testes
     PYPI_API_TOKEN	Publicação de releases finais
     GITHUB_TOKEN	Automático (não precisa criar)
 
 Permissões do GitHub Actions::
+
     Settings → Actions → General
     Workflow permissions → Read and Write
 

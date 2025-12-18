@@ -217,6 +217,8 @@ jobs:
           TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}
         run: |
           #python3 -m pip install twine
+          python3 -m pip install --upgrade pip setuptools wheel
+          python3 -m pip install twine
           python3 -m twine upload --repository-url https://test.pypi.org/legacy/ dist/*
 
   # Publish to PYPI

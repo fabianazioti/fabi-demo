@@ -1,0 +1,24 @@
+exclude docs/sphinx/_build
+include *.rst
+include *.sh
+include *.txt
+include LICENSE
+include README.rst
+include pytest.ini
+recursive-exclude docs/sphinx/_build *
+recursive-include docs *.bat
+recursive-include docs *.css
+recursive-include docs *.py
+recursive-include docs *.rst
+recursive-include docs *.ico
+recursive-include docs *.png
+recursive-include docs *.json
+recursive-include docs *.qml
+recursive-include docs Makefile
+recursive-include tests *.py
+recursive-include tests *.json
+recursive-include examples *.py
+recursive-include fabi_demo/jsonschemas *.json
+recursive-include fabi_demo/templates *.html
+recursive-include fabi_demo *.html
+
